@@ -62,9 +62,50 @@ class TaskHasFilesRepository {
   }
 }
 
+class Group {
+  constructor(dao) {
+    this.dao = dao;
+  }
+  getAll() {
+    return this.dao.all(`SELECT * FROM groups;`);
+  }
+}
+
+class GroupHasUsersRepository {
+  constructor(dao) {
+    this.dao = dao;
+  }
+  getAll() {
+    return this.dao.all(`SELECT * FROM group_has_users;`);
+  }
+}
+
+
+class ProjectDailyColumnStatsRepository {
+  constructor(dao) {
+    this.dao = dao;
+  }
+  getAll() {
+    return this.dao.all(`SELECT * FROM project_daily_column_stats;`);
+  }
+}
+
+class ProjectHasGroupsRepository {
+  constructor(dao) {
+    this.dao = dao;
+  }
+  getAll() {
+    return this.dao.all(`SELECT * FROM project_has_groups;`);
+  }
+}
+
 
 
 module.exports = {
   AppDAO,
-  TaskHasFilesRepository
+  TaskHasFilesRepository,
+  GroupHasUsersRepository,
+  Group,
+  ProjectDailyColumnStatsRepository,
+  ProjectHasGroupsRepository
 };
