@@ -6,11 +6,24 @@ const listSwimlaneName = ['BSP', 'WSP', 'SSP', 'BSC'].reduce((acc, el) => {
   acc.push(iosName, androidName);
   return acc;
 }, []);
-const listSwimlaneNameOriginal = ['BSP', 'WSP', 'SSP', 'BSCWP', 'BSC'];
+const listSwimlaneNameOriginal = ['BSP', 'WSP', 'SSP', 'BSC'];
 const PROJECT_ID_FOR_SEARCH = process.env.PROJECT_ID_FOR_SEARCH;
 const SWIMLANE_ID = process.env.SWIMLANE_ID;
 const PROJECT_ID = process.env.PROJECT_ID;
-
+const gameNameRule = [
+  {
+    regex: /(BSP|Ball Sort Puzzle)/i, value: 'BSP'
+  },
+  {
+    regex: /(WSP|Water Sort)/i, value: 'WSP'
+  },
+  {
+    regex: /(SSP|Soda Sort)/i, value: 'SSP'
+  },
+  {
+    regex: /(BSC|Ball Sort Color)/i, value: 'BSC'
+  }
+];
 (async () => {
   try {
 
@@ -18,33 +31,22 @@ const PROJECT_ID = process.env.PROJECT_ID;
     const tasksSwimlane = (await requestKanboard("getAllTasks", {
       "project_id": PROJECT_ID_FOR_SEARCH,
       "status_id": 1
-    })).filter(el => el.swimlane_id === SWIMLANE_ID);
-
+    }))
+      .filter(el => el.swimlane_id === SWIMLANE_ID);
     const tasksByAllGame = [];
     const memoIds = [];
     for (let i = 0; i < listSwimlaneNameOriginal.length; i++) {
       const name = listSwimlaneNameOriginal[i];
       const taskGame = tasksSwimlane.filter(el => {
-        let flag = false;
-        let text = el.title;
-        if (el.title.includes('Water Sort')) text = 'WSP'
-        else if (el.title.includes('Soda Sort')) text = 'SSP'
-        else if (el.title.includes('Ball Sort Puzzle')) text = 'BSP'
-        else if (el.title.includes('Ball Sort Color')) text = 'BSC'
-        const listMatch = text.match(/([A-Z]{3,})/)
-        if (Array.isArray(listMatch)) {
-          flag = listMatch.includes(name)
-          if (flag) memoIds.push(el.id)
-        }
-        return flag
+        const flag = (gameNameRule.find(rule => el.title.match(rule.regex)) || { value: '' }).value === name;
+        if (flag) memoIds.push(el.id)
+        return flag;
       })
       tasksByAllGame.push(taskGame)
     }
+    const [bspGames, wspGames, sspGames, bscGames] = tasksByAllGame;
 
-    const [bspGames, wspGames, sspGames, bscwpGames, bscGames] = tasksByAllGame;
-
-    const bscwpAllGames = bscwpGames.concat(bscGames);
-    const listDataByOrder = [bspGames, wspGames, sspGames, bscwpAllGames].reduce((acc, listGame) => {
+    const listDataByOrder = [bspGames, wspGames, sspGames, bscGames].reduce((acc, listGame) => {
       const iosGames = listGame.filter(game => game.title.toLowerCase().includes('ios'));
       const iosGameIds = iosGames.map(gameIos => gameIos.id);
       const androidGames = listGame.filter(game => !iosGameIds.includes(game.id));
