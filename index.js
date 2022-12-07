@@ -18,8 +18,8 @@ const { AppDAO, TaskHasFilesRepository, GroupHasUsersRepository, Group, ProjectD
     const sqlTaskHasFiles = "INSERT INTO task_has_files VALUES ?;";
     await query(sqlTaskHasFiles, [listTaskHasFiles]);
     // insert group
-    const sqlGroup = `INSERT INTO ${process.env.DB_DATABASE_NAME}.groups VALUES ?;`;
-    await query(sqlGroup, [listGroup]);
+    // const sqlGroup = `INSERT INTO ${process.env.DB_DATABASE_NAME}.groups VALUES ?;`;
+    // await query(sqlGroup, [listGroup]);
     // insert group_has_users
     const sqlGroupHasUsers = "INSERT INTO group_has_users VALUES ?;";
     await query(sqlGroupHasUsers, [listGroupHasUsers]);

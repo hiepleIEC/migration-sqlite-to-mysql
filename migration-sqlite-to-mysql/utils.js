@@ -24,7 +24,7 @@ const requestKanboard = async (method, params) => {
     const payload = {
       jsonrpc: "2.0",
       method,
-      id:1,
+      id: 1,
       params,
     };
     const result = await axios.post(

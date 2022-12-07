@@ -1,139 +1,106 @@
-const query = require('./connect-mysql')
-const { requestKanboard } = require('./requestKanboard')
 require('dotenv').config({})
-;(async () => {
-  try {
-    const [allTasksOpen, allTaskClosed, columns] = await Promise.all([
-      requestKanboard('getAllTasks', {
-        project_id: '8',
-        status_id: 1,
-      }),
-      requestKanboard('getAllTasks', {
-        project_id: '8',
-        status_id: 0,
-      }),
-      requestKanboard('getColumns', ['8']),
-    ])
-    const objColumns = columns.reduce((acc, el) => {
-      acc[el.id] = el.title
-      return acc
-    }, {})
-    const allTasks = allTaskClosed.concat(allTasksOpen)
-    const batchAllTasks = batchArr(allTasks, 100)
-    for (let i = 0; i < batchAllTasks.length; i++) {
-      const batch = batchAllTasks[i]
-      await Promise.all(
-        batch.map(async (task) => {
-          const allNameTask = task.title
-            .split(/[()]/)
-            .map((el) => el.trim())
-            .filter((el) => el)
-          const rootNameTask = allNameTask[allNameTask.length - 1]
-          const column = objColumns[task.column_id]
-          const status = task.is_active
-          const description = task.description
-          const user_kanboard_id = task.owner_id
-          const record = {
-            name: rootNameTask || '',
-            column,
-            status,
-            description,
-            user_kanboard_id,
-          }
-          // insert task => info_ideas
-          const sqlInsertIdeaInfo =
-            'INSERT INTO `ideas`.`info_ideas` (`name`, `column`, `status`, `description`, `user_kanboard_id`) VALUES ?;'
-          const resInsertIdeaInfo = await query(sqlInsertIdeaInfo, [
-            [Object.values(record)],
-          ])
-          const idea_id = resInsertIdeaInfo.insertId
+const _ = require('lodash')
+const { requestKanboard } = require('./requestKanboard')
+const getSheets = require('./sheetFunctions')
 
-          // insert child name
-          if (allNameTask.length > 1) {
-            allNameTask.pop()
-            const primaryName = allNameTask[0]
-            // insert child primary name
-            await query(
-              'INSERT INTO `ideas`.`name_ideas` (`name`, `root_id`, `is_primary`) VALUES ?;',
-              [
-                [
-                  Object.values({
-                    name: primaryName,
-                    root_id: idea_id,
-                    is_primary: 1,
-                  }),
-                ],
-              ]
-            )
-            // insert child not primary name
-            allNameTask.shift()
-            for (let i = 0; i < allNameTask.length; i++) {
-              await query(
-                'INSERT INTO `ideas`.`name_ideas` (`name`, `root_id`, `is_primary`) VALUES ?;',
-                [
-                  [
-                    Object.values({
-                      name: allNameTask[i],
-                      root_id: idea_id,
-                      is_primary: 0,
-                    }),
-                  ],
-                ]
-              )
-            }
-          }
-          // insert external task link
-          const listExternalTaskLink = await requestKanboard(
-            'getAllExternalTaskLinks',
-            [task.id]
-          )
-          if (listExternalTaskLink.length > 0) {
-            await Promise.all(
-              listExternalTaskLink.map((el) => {
-                return query(
-                  'INSERT INTO `ideas`.`external_link_ideas` (`root_id`, `link`) VALUES ?;',
-                  [
-                    [
-                      Object.values({
-                        root_id: idea_id,
-                        link: el.url,
-                      }),
-                    ],
-                  ]
-                )
-              })
-            )
-          }
-          // insert tag
-          const objTaskTags = await requestKanboard('getTaskTags', [task.id])
-          const listTaskTagsEntries = Object.entries(objTaskTags)
-          if (listTaskTagsEntries.length > 0) {
-            await Promise.all(
-              listTaskTagsEntries.map((el) => {
-                return query(
-                  'INSERT INTO `ideas`.`tag_ideas` (`tag_kanboard_id`, `root_id`,`tag_kanboard_name`) VALUES ?;',
-                  [
-                    [
-                      Object.values({
-                        tag_kanboard_id: el[0],
-                        root_id: idea_id,
-                        tag_kanboard_name: el[1],
-                      }),
-                    ],
-                  ]
-                )
-              })
-            )
-          }
-        })
-      )
+  ; (async () => {
+    try {
+      const sheets = getSheets()
+      // get data status sheet
+      const sheetStatusName = 'status!A:B';
+      const {
+        data: { values: statusSheetData },
+      } = await sheets.spreadsheets.values.get({
+        spreadsheetId: process.env.SHEET_ID,
+        range: sheetStatusName,
+      })
+      const statusObj = statusSheetData.reduce((acc, el, index) => {
+        if (index === 0) return acc;
+        acc[el[1]] = el[0]
+        return acc;
+      }, {})
+      const [allTasksOpen, allTaskClosed, columns] = await Promise.all([
+        requestKanboard('getAllTasks', {
+          project_id: '8',
+          status_id: 1,
+        }),
+        requestKanboard('getAllTasks', {
+          project_id: '8',
+          status_id: 0,
+        }),
+        requestKanboard('getColumns', ['8']),
+      ])
+      const objColumns = columns.reduce((acc, el) => {
+        acc[el.id] = el.title
+        return acc
+      }, {})
+      const allTasks = allTaskClosed.concat(allTasksOpen)
+      const batchAllTasks = batchArr(allTasks, 10)
+      const results = []
+      for (let i = 0; i < batchAllTasks.length; i++) {
+        const batch = batchAllTasks[i]
+        await Promise.all(
+          batch.map(async (task) => {
+            const allNameTask = task.title
+              .split(/[()]/)
+              .map((el) => el.trim())
+              .filter((el) => el)
+            const rootNameTask = allNameTask[allNameTask.length - 1]
+            const status_id = statusObj[objColumns[task.column_id]]
+            // match column => status
+            const type_id = 1;
+            const description = task.description
+            const user_kanboard_id = task.owner_id
+            const [userNameKanboard, tags, externalLinks, internalTaskLinkIds] = await Promise.all([
+              getKanboardUserName(user_kanboard_id),
+              getTagsByTaskId(task.id),
+              getAllExternalTaskLinks(task.id),
+              getAllInternalTasklinkByTaskId(task.id)
+            ])
+
+            const record = [
+              task.id,
+              allNameTask[0] || '',
+              status_id,
+              type_id,
+              description,
+              userNameKanboard,
+              tags,
+              externalLinks,
+              '',// attachments links,
+              internalTaskLinkIds,
+              rootNameTask,
+            ];
+            allNameTask.shift();
+            allNameTask.pop();
+            const alternativeNames = allNameTask.join(',') || '';
+            record.push(alternativeNames)
+            results.push(record)
+          })
+        )
+
+
+      }
+      // insert google sheet
+      const batchRecordsGG = batchArr(results, 200)
+      for (let index = 0; index < batchRecordsGG.length; index++) {
+        const batch = batchRecordsGG[index];
+        setTimeout(async () => {
+          await sheets.spreadsheets.values.append({
+            spreadsheetId: process.env.SHEET_ID,
+            range: `A:L`,
+            valueInputOption: 'RAW',
+            resource: {
+              values: [...batch],
+            },
+          })
+        }, index * 1000)
+      }
+      console.log(results.length)
+    } catch (error) {
+      console.log('Error', error)
     }
-  } catch (error) {
-    console.log('Loi', error)
-  }
-
-  // const getAllTaskIdeaProject =
-})()
+  })()
 
 const batchArr = (arr, length) => {
   const res = []
@@ -143,4 +110,36 @@ const batchArr = (arr, length) => {
     } else res[Math.floor(i / length)] = [arr[i]]
   }
   return res
+}
+
+const getKanboardUserName = async (userId) => {
+  const result = await requestKanboard('getUser', {
+    user_id: userId,
+  });
+  return result ? result.name : '';
+}
+
+const getTagsByTaskId = async (taskId) => {
+  const objTags = await requestKanboard('getTaskTags', [taskId]);
+  return Object.values(objTags).join(',')
+}
+
+const getAllExternalTaskLinks = async (taskId) => {
+  const links = await requestKanboard(
+    'getAllExternalTaskLinks',
+    [taskId]
+  )
+  return links.map(el => el.url).join(',')
+}
+
+const getAllInternalTasklinkByTaskId = async (taskId) => {
+  const links = await requestKanboard(
+    'getAllTaskLinks',
+    [taskId]
+  )
+  return links.map(el => el.task_id).join(',')
+}
+
+function getRandomArbitrary(min, max) {
+  return Math.random() * (max - min) + min;
 }
